@@ -1,1 +1,14 @@
 /Fake-News-Multimodal-Classification/data/working
+.venv/
+.vscode/
+/Fake-News-Multimodal-Classification/hf_cache/
+/Fake-News-Multimodal-Classification/data/raw
+/Fake-News-Multimodal-Classification/data/multimodal_only_samples
+/data/multimodal_only_samples
+/data/working
+
+
+
+
+
+
