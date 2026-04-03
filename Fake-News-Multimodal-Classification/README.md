@@ -1,251 +1,463 @@
-# Multimodal Fake News Detection on Fakeddit
+# Multimodal Fake News Detection — Fakeddit
 
-This repository contains our Advanced AI project for multimodal fake news detection on the Fakeddit dataset.
+> **Classify Reddit posts (headline + image) into 6 fake-news categories using BERT+ResNet-50, BERT+ViT, and CLIP.**
 
-The project implements and compares three multimodal architectures that jointly use news headlines and images:
-
-- **BERT + ResNet-50** (text + CNN image encoder)
-- **BERT + ViT** (text + Vision Transformer)
-- **CLIP-based multimodal classifier** (frozen CLIP backbone + classification head)
-
-A Streamlit demo app lets you load trained weights and classify new (headline, image) pairs into six Fakeddit-style labels.
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/)
 
 ---
 
-## Task and labels
+## Table of Contents
 
-Each sample has a headline (`clean_title`) and an image. The target is one of **six** Fakeddit categories:
+1. [Project Overview](#1-project-overview)
+2. [Repository Structure](#2-repository-structure)
+3. [Dataset — Fakeddit](#3-dataset--fakeddit)
+4. [Google Drive Folder Setup](#4-google-drive-folder-setup-required-before-anything-else)
+5. [Step-by-Step: Running on Google Colab (Recommended)](#5-step-by-step-running-on-google-colab-recommended)
+6. [Training Notebooks](#6-training-notebooks)
+7. [Web App Demo (Streamlit)](#7-web-app-demo-streamlit)
+8. [Pre-Trained Weights](#8-pre-trained-weights)
+9. [Installation Challenge — Quick Checklist](#9-installation-challenge--quick-checklist)
+10. [Expected Performance](#10-expected-performance)
+11. [Configuration Reference](#11-configuration-reference)
+12. [License](#12-license)
+13. [Authors](#13-authors)
 
+---
 
-| Class ID | Label Name           | Description |
-|----------|----------------------|-------------|
-| 0        | **TRUE**                  | Factually accurate content based on verified information |
-| 1        | **SATIRE**              | Humorous or satirical content, not meant to be taken literally |
-| 2        | **FALSE CONNECTION**     | Headlines or visuals that do not accurately reflect the article content |
-| 3        | **IMPOSTER CONTENT**    | Content impersonating genuine sources |
-| 4        | **MANIPULATED CONTENT**  | Content that has been altered or edited to mislead |
-| 5        | **MISLEADING CONTENT**   | Selective framing or missing context |
+## 1. Project Overview
 
-**Decision rule (all models):** predict the class with the **highest logit** among the six outputs.
-### 1.2 Data Format
+We train three multimodal classifiers on the **Fakeddit** dataset to detect fake news using both the article **headline (text)** and the accompanying **image**:
 
-Each example contains:
+| Model | Text Encoder | Image Encoder | Checkpoint |
+|---|---|---|---|
+| BERT + ResNet-50 | `bert-base-uncased` | ResNet-50 (ImageNet) | `m1.pth` |
+| BERT + ViT | `bert-base-uncased` | `google/vit-base-patch16-224-in21k` | `bert_vit_v2_2_best_score.pth` |
+| CLIP Classifier | `openai/clip-vit-base-patch32` | CLIP Vision Tower | `clip_multimodal_bestv1.pth` |
 
-- A textual **headline/title** in column `clean_title`.
-- An associated **image** given by `image_url`, downloaded and saved as `<id>.jpg`.
-- Metadata: `author`, `domain`, `subreddit`, `score`, `upvote_ratio`, `created_utc`.
+A **Streamlit demo app** loads all three models, classifies any (headline, image) pair into one of six labels, and shows a majority-vote result.
 
-The cleaned dataframe `clean_df.csv` has 13 columns:
+---
+
+## 2. Repository Structure
 
 ```
-author, clean_title, created_utc, domain, hasImage, id,
-image_url, linked_submission_id, num_comments, score,
-subreddit, upvote_ratio, 6_way_label
+Multimodal-Fake-News-Classification-on-Fakeddit/
+└── Fake-News-Multimodal-Classification/
+    ├── dataset_downloader.ipynb          <- Step 1: download & prepare the dataset
+    ├── requirements.txt                  <- Python dependencies
+    ├── Training Notebooks/
+    │   ├── bertandrestnet.ipynb          <- Train BERT + ResNet-50
+    │   ├── bert_ViT_v2.ipynb             <- Train BERT + ViT
+    │   ├── CLIPv1.ipynb                  <- CLIP experiments / evaluation
+    │   └── CLIPv2_1.ipynb                <- Train final CLIP classifier
+    └── Fakeddit-WebApp/
+        ├── RESVITCLIPv1/                 <- Ensemble app (all 3 models)
+        │   ├── app.py
+        │   └── Model.py
+        └── CLIPv2/                       <- CLIP-only app
+            ├── app.py
+            └── Model.py
 ```
 
-All training notebooks assume (on Colab):
+---
+
+## 3. Dataset — Fakeddit
+
+[Fakeddit](https://github.com/entitize/Fakeddit) is a large-scale multimodal fake news dataset built from Reddit. We use the **6-way label** split:
+
+| Label ID | Label Name | Description |
+|---|---|---|
+| 0 | TRUE | Factually accurate, verified content |
+| 1 | SATIRE | Humorous/satirical content, not meant literally |
+| 2 | FALSE CONNECTION | Headline/image does not match the actual content |
+| 3 | IMPOSTER CONTENT | Impersonates a genuine news source |
+| 4 | MANIPULATED CONTENT | Edited/altered content to mislead |
+| 5 | MISLEADING CONTENT | Selective framing or missing context |
+
+### Fakeddit TSV Files
+
+You need **3 TSV files** from the official Fakeddit release:
+
+- `multimodal_train.tsv`
+- `multimodal_test_public.tsv`
+- `multimodal_validate.tsv`
+
+Download them from the [Fakeddit-Data Kaggle](https://www.kaggle.com/datasets/vanshikavmittal/fakeddit-dataset/data) (provided by the dataset owners).
+
+---
+
+## 4. Google Drive Folder Setup (required before anything else)
+
+> ⚠️ **Critical:** Google Colab runtimes reset when disconnected. All downloaded images and generated files **must live in Google Drive** so they persist across sessions. Do not store them only in `/content` — that disk is wiped on every disconnect.
+
+### 4.1 Create the Folder Tree in Your Google Drive
+
+Go to [drive.google.com](https://drive.google.com) and create the following folder structure **exactly as shown** — spelling and capitalisation matter, as the notebooks use these exact paths:
+
+```
+My Drive/
+└── fake-news-detector/
+    └── multimodal_only_samples/
+        └── working/
+            └── images/        <- images will be downloaded here automatically
+```
+
+### 4.2 Upload the 3 TSV Files
+
+Upload the three TSV files directly inside `My Drive/fake-news-detector/multimodal_only_samples/` (**not** inside `working/`):
+
+```
+My Drive/fake-news-detector/multimodal_only_samples/
+    ├── multimodal_train.tsv
+    ├── multimodal_test_public.tsv
+    ├── multimodal_validate.tsv
+    └── working/
+        └── images/            <- empty for now
+```
+
+Once the dataset downloader runs (Step 5.3), it will populate `working/images/` with ~18,000 images and save `working/clean_df.csv`.
+
+---
+
+## 5. Step-by-Step: Running on Google Colab (Recommended)
+
+### 5.1 Clone the Repository Inside Colab
+
+Open a **new Colab notebook** and run:
 
 ```python
-CLEANDFPATH = "/content/drive/MyDrive/Fake-news-detector/multimodal_only_samples/working/clean_df.csv"
-IMAGEDIR    = "/content/drive/MyDrive/Fake-news-detector/multimodal_only_samples/working/images"
+!git clone https://github.com/ak-saxena/Multimodal-Fake-News-Classification-on-Fakeddit.git
 ```
 
-If you place the data elsewhere, update these constants at the top of each notebook.
+This places the repo at `/content/Multimodal-Fake-News-Classification-on-Fakeddit/`. Verify with:
 
-### 1.3 Dataset Creation Notebook
-
-`dataset_downloader.ipynb` performs:
-
-1. Mounts Google Drive: `drive.mount('/content/drive')`.
-2. Loads the raw Fakeddit CSV.
-3. Filters to the subset used in this project (posts with images, 6-way labels).
-4. Downloads all images to `IMAGEDIR` using `image_url` and `id`.
-5. Verifies that expected images exist and logs any download failures.
-6. Saves the cleaned dataframe as `clean_df.csv` (shape `(18470, 13)`).
----
-
-## Why three model families?
-
-The goal was not only raw accuracy but understanding **how fusion behaves** under **class imbalance**, **long training**, and **limited Colab GPU** memory:
-
-- **Late fusion on logits** is modular and easy to interpret.
-- **Feature-level concatenation** is more expressive but heavier and more sensitive to optimization.
-- **CLIP** starts from a **pretrained joint vision–language space**, so alignment is not learned from scratch; richer fusion over embeddings can outperform simpler stacks when training is tuned.
-
----
-
-## Model 1: BERT + ResNet-50 (`bertandrestnet.ipynb`)
-
-| Component | Choice |
-|-----------|--------|
-| Text | `bert-base-uncased`, `[CLS]` pooling → linear layer to 6 logits |
-| Image | ImageNet-pretrained **ResNet-50** → dropout → linear to 6 logits |
-| Fusion | **Element-wise `max`** over the two 6-dimensional logit vectors (per class, keep the stronger modality) |
-| Loss | Weighted `CrossEntropyLoss` (class weights for imbalance) |
-
-**Reported test performance (notebook output):** ~**76.34%** accuracy; precision/recall ~0.763.
-
-**Properties:** Simple, interpretable late fusion; each branch can be reasoned about separately.
-
----
-
-## Model 2: BERT + ViT (`bert_ViT_v2.ipynb`)
-
-
-| Component | Choice |
-|-----------|--------|
-| Text | `bert-base-uncased`, `[CLS]` embedding |
-| Image | `google/vit-base-patch16-224-in21k` **ViT**, `[CLS]` token embedding |
-| Projection | Each modality → **512-d** (GELU, LayerNorm, dropout) |
-| Fusion | **Concatenate** text + image → **1024-d** → MLP classifier → 6 logits |
-
-**Reported test performance (notebook output):** ~**76.18%** accuracy; weighted F1 ~**0.761** (see saved test report in the notebook run).
-
-**Properties:** Stronger image representation than a classic CNN; **higher GPU use** and tighter batch-size limits; learning rate and schedule matter more. The notebook uses a combined validation score (e.g. weighted + macro F1) for model selection and logs per-class metrics for rare classes.
-
----
-
-## Model 3: CLIP multimodal classifier v1 (`CLIPv1.ipynb`)
-
-| Component | Choice |
-|-----------|--------|
-| Backbone | `openai/clip-vit-base-patch32` (`CLIPModel` in Hugging Face) |
-| Embeddings | L2-normalized **image** and **text** projection vectors |
-| Fusion | Concatenate **`[img, text, |img−text|, img⊙text]`** → MLP (GELU, dropout) → 6 logits |
-
-**Training schedule (notebook constants):**
-
-1. **Stage 1 — frozen CLIP:** train **classifier head only** for **2** epochs (higher LR on the head).
-2. **Stage 2 — full fine-tune:** **unfreeze entire CLIP** for up to **6** more epochs with smaller learning rate (early stopping may cut this short).
-
-**Reported test performance (notebook output):** **76.72%** accuracy; **weighted F1 ~0.7826** (best among the three baseline variants in this project narrative).
-
-**Conceptual progression:** ResNet uses **late logit fusion**; ViT uses **early feature concatenation**; CLIP v1 adds **interaction-aware** features (difference and product) on top of a **shared pretrained** embedding space.
-
----
-
-## Model 4: CLIP multimodal classifier v2 (`CLIPv2_1.ipynb`)
-
-CLIP v2 refines the setup for **imbalance** and **generalization**. Highlights from the notebook:
-
-- **Offline augmentation** for underrepresented classes (e.g. 3, 4, 5): `RandomResizedCrop`, horizontal flip, `ColorJitter`, small `RandomRotation`; augmented images saved and merged into training metadata (`is_augmented` flag).
-- **Balanced class weights** via `sklearn.utils.class_weight.compute_class_weight`.
-- **`CrossEntropyLoss` with label smoothing** (0.1 in the notebook).
-- **`WeightedRandomSampler`** for training batches.
-- **Staged training:** **2** epochs **head-only**, then **unfreeze top transformer blocks** (last **2** vision + **2** text layers by default) for **top-layer** fine-tuning with reduced LRs—not full-model unfreeze from step one like v1’s second stage.
-- Classifier adds **LayerNorm** on the fused 4×projection-dim vector (see `Fakeddit-WebApp/CLIPv2/Model.py`).
-
-**Reported test performance (notebook output):** **83.22%** accuracy; weighted F1 ~**0.83**; macro F1 ~**0.74**.
-
----
-
-## Results summary (from notebook runs)
-
-| Notebook | Fusion idea | Test accuracy (approx.) | Notes |
-|----------|-------------|-------------------------|--------|
-| `bertandrestnet.ipynb` | Max over logits | **76.34%** | Baseline dual-encoder |
-| `bert_ViT_v2.ipynb` | Concat 512+512 | **76.18%** | Weighted F1 ~0.761 |
-| `CLIPv1.ipynb` | CLIP + diff/product | **76.72%** | Weighted F1 ~0.783 |
-| `CLIPv2_1.ipynb` | Same fusion + aug / weights / staged top layers | **83.22%** | Strongest reported |
-
-*Exact splits and seeds are defined inside each notebook; reproduce by running the full pipeline.*
-
----
-
-## Repository layout (research + demos)
-
-```
-Fake-News-Multimodal-Classification/
-├── bertandrestnet.ipynb      # BERT + ResNet, max fusion
-├── bert_ViT_v2.ipynb         # BERT + ViT, concat fusion
-├── CLIPv1.ipynb              # CLIP fusion v1, two-stage full FT
-├── CLIPv2_1.ipynb            # CLIP fusion v2, augmentation + class weights + staged top layers
-├── dataset_downloader.ipynb  # Helpers to prepare Fakeddit TSV + images (Colab-oriented)
-├── data/                     # Local data layout (TSV splits, images) when present
-├── requirements.txt          # Minimal pinned deps (expand locally, see below)
-└── Fakeddit-WebApp/
-    ├── RESVITCLIPv1/         # One Streamlit app: all three baselines + majority vote
-    │   ├── app.py
-    │   ├── Model.py          
-    │   └── *.pth             # Place checkpoints here (not always in git)
-    └── CLIPv2/               # Streamlit app: CLIP v2 only
-        ├── app.py
-        ├── Model.py          # CLIP V2 (data aug + freeze backbones)
-        └── clip_multimodal_best.pth
+```python
+import os
+print(os.listdir('/content/Multimodal-Fake-News-Classification-on-Fakeddit/Fake-News-Multimodal-Classification/'))
+# Expected: ['dataset_downloader.ipynb', 'requirements.txt', 'Training Notebooks', 'Fakeddit-WebApp', ...]
 ```
 
+### 5.2 Install Dependencies
+
+```python
+!pip install -q \
+  torch torchvision torchaudio \
+  transformers \
+  accelerate \
+  scikit-learn \
+  pandas \
+  numpy \
+  pillow \
+  matplotlib \
+  tqdm \
+  streamlit
+```
+
+> PyTorch comes pre-installed on Colab with CUDA support. The command above upgrades/installs the remaining packages. You can also install from the repo's `requirements.txt`:
+> ```python
+> !pip install -q -r /content/Multimodal-Fake-News-Classification-on-Fakeddit/Fake-News-Multimodal-Classification/requirements.txt
+> ```
+
+### 5.3 Mount Google Drive and Set Up the Dataset
+
+#### 5.3.1 Mount Your Drive
+
+Run this at the start of **every Colab session** (the notebooks include this cell already):
+
+```python
+from google.colab import drive
+drive.mount('/content/drive')
+```
+
+After authenticating, your Drive is accessible at `/content/drive/MyDrive/`.
+
+#### 5.3.2 Verify the Folder Structure
+
+```python
+import os
+
+base = "/content/drive/MyDrive/fake-news-detector/multimodal_only_samples"
+print(os.listdir(base))
+# Expected: ['multimodal_train.tsv', 'multimodal_test_public.tsv', 'multimodal_validate.tsv', 'working']
+
+print(os.listdir(os.path.join(base, "working")))
+# Expected: ['images']  (empty at first; images appear after the downloader runs)
+```
+
+#### 5.3.3 Run `dataset_downloader.ipynb`
+
+In Colab, open the notebook via the left-side file browser at:
+
+```
+/content/Multimodal-Fake-News-Classification-on-Fakeddit/Fake-News-Multimodal-Classification/dataset_downloader.ipynb
+```
+
+Or navigate to it via `File → Open notebook → Upload`.
+
+**What the notebook does — in order:**
+
+1. Mounts Google Drive.
+2. Reads and merges the 3 TSV files from `multimodal_only_samples/`.
+3. Filters rows to keep only posts that have images and valid 6-way labels.
+4. Downloads all images from `image_url` into `working/images/` — each saved as `<id>.jpg`.
+5. Logs any failed/skipped image downloads.
+6. Saves the cleaned dataframe as **`working/clean_df.csv`** (~18,470 rows, 13 columns).
+
+> ⏱ **Image downloading is the slow step** — expect 1–3 hours depending on network speed. The notebook shows a `tqdm` progress bar. Already-downloaded images are skipped on re-run, so you can safely stop and resume. Everything saves to Drive so nothing is lost on Colab disconnect.
+
+After completion, your Drive will contain:
+
+```
+My Drive/fake-news-detector/multimodal_only_samples/working/
+    ├── clean_df.csv          <- ~18,470 rows, 13 columns
+    └── images/
+        ├── 53y2yj.jpg
+        ├── 8toxfk.jpg
+        └── ...               <- ~18,000 images
+```
+
+### 5.4 Run a Training Notebook
+
+All training notebooks are inside `Training Notebooks/`. Open any one of them in Colab.
+
+Before running:
+
+1. **Enable GPU:** `Runtime → Change runtime type → T4 GPU` (or A100 via Colab Pro).
+2. **Check the data paths** at the top of each notebook:
+
+```python
+CLEANDFPATH = "/content/drive/MyDrive/fake-news-detector/multimodal_only_samples/working/clean_df.csv"
+IMAGEDIR    = "/content/drive/MyDrive/fake-news-detector/multimodal_only_samples/working/images"
+```
+
+If your Google Drive folder is named differently, update these two constants. Then run all cells top-to-bottom.
+
+Each notebook saves its best checkpoint directly to Drive so it survives session resets.
+
 ---
 
-## Dependencies
+## 6. Training Notebooks
 
-Training notebooks use **PyTorch**, **transformers**, **torchvision**, **Pillow**, **pandas**, **scikit-learn**, and (in `dataset_downloader.ipynb`) Colab-specific paths. The root `requirements.txt` currently lists `scikit-learn>=1.3`; for local runs, install at least:
+### 6.1 BERT + ResNet-50 (`bertandrestnet.ipynb`)
+
+**Architecture:**
+- **Text branch:** `bert-base-uncased` → `[CLS]` pooled output → dropout → `Linear(768 → 6)`
+- **Image branch:** `ResNet-50` (ImageNet pretrained) → dropout → `Linear(1000 → 6)`
+- **Fusion:** element-wise `torch.max` of the two 6-dim logit vectors → CrossEntropy loss
+
+**Image preprocessing:** resize `256×256`, convert to tensor, normalize with ImageNet mean/std `([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])`.
+
+**Output checkpoint:** `m1.pth` → used by the ensemble app.
+
+---
+
+### 6.2 BERT + ViT (`bert_ViT_v2.ipynb`)
+
+**Architecture:**
+- **Text branch:** `bert-base-uncased` → BERT CLS output
+- **Image branch:** `google/vit-base-patch16-224-in21k` → ViT CLS output
+- **Fusion:** concatenate text + image embeddings → dropout → `Linear(→ 6)`, CrossEntropy with label smoothing
+
+**Key hyperparameters:**
+
+```python
+MAX_LEN        = 80        # BERT token max length
+BATCH_SIZE     = 16
+NUM_EPOCHS     = 12
+HEAD_LR        = 1e-4      # classification head learning rate
+BACKBONE_LR    = 5e-6      # BERT + ViT backbone learning rate
+DROPOUT        = 0.4
+WEIGHT_DECAY   = 1e-4
+EARLY_STOPPING_PATIENCE = 4
+```
+
+**Extras:** class weights for imbalance, mixed precision (`autocast` + `GradScaler`), cosine LR scheduler, early stopping, saves train/val/test splits as CSVs.
+
+**Output checkpoints:**
+- `bert_vit_v2_2_best_score.pth` ← best validation checkpoint, used by demo app
+- `bert_vit_v2_2_final.pth` ← last epoch checkpoint
+
+---
+
+### 6.3 CLIP Classifier (`CLIPv2_1.ipynb`)
+
+> `CLIPv1.ipynb` contains early experiments and evaluation tables. `CLIPv2_1.ipynb` is the **main training notebook**.
+
+**Architecture:**
+- **Backbone:** `openai/clip-vit-base-patch32` (optionally frozen)
+- **Inputs:** CLIP text tokens (`input_ids`, `attention_mask`) + CLIP `pixel_values`
+- **Head:** dropout (`0.2`) → `Linear(→ 6)`, CrossEntropy loss
+
+**Output checkpoint:** `clip_multimodal_bestv1.pth` ← used by both apps.
+
+---
+
+## 7. Web App Demo (Streamlit)
+
+Both apps accept a headline + image and return a 6-class prediction with confidence scores.
+
+### 7.1 Ensemble App — All 3 Models (`Fakeddit-WebApp/RESVITCLIPv1/app.py`)
+
+Loads BERT+ResNet, BERT+ViT, and CLIP. Shows individual predictions and a **majority vote**.
+
+**Required files in the same folder as `app.py`:**
+
+```
+Model.py
+m1.pth
+bert_vit_v2_2_best_score.pth
+clip_multimodal_bestv1.pth
+```
+
+**Run locally:**
 
 ```bash
-pip install torch torchvision transformers streamlit pillow pandas scikit-learn accelerate
+cd Fake-News-Multimodal-Classification/Fakeddit-WebApp/RESVITCLIPv1
+streamlit run app.py
+# Open: http://localhost:8501
 ```
 
-Match **CUDA** builds of PyTorch to your GPU if applicable.
+### 7.2 CLIP-Only App (`Fakeddit-WebApp/CLIPv2/app.py`)
 
----
+Minimal single-model demo.
 
-## Data
+**Required files:**
 
-- **Paper / dataset:** [Fakeddit: A New Multimodal Benchmark Dataset for Fine-grained Fake News Detection](https://aclanthology.org/2020.lrec-1.755/).
-- Use **`dataset_downloader.ipynb`** to download or organize multimodal TSVs and images (paths in the notebook target Google Drive when run in Colab; adjust for your machine).
-- This repo may contain **`data/working/splits/`** CSVs when you have created train/val/test splits locally.
+```
+Model.py
+clip_multimodal_best.pth      # update MODEL_PATH in app.py if your filename differs
+```
 
----
-
-## Streamlit apps
-
-### 1. Three-model demo + majority vote — `Fakeddit-WebApp/RESVITCLIPv1/`
-
-Runs **BERT+ResNet**, **BERT+ViT**, and **CLIP v1** side by side, then applies a **majority vote** over the three predicted class indices (if all disagree, the app reports no majority).
-
-**Expected checkpoint filenames** (same directory as `app.py`):
-
-| File | Model |
-|------|--------|
-| `m1.pth` | BERT + ResNet |
-| `bert_vit_v2_2_best_score.pth` | BERT + ViT |
-| `clip_multimodal_bestv1.pth` | CLIP v1-style multimodal classifier |
+**Run locally:**
 
 ```bash
-cd Fakeddit-WebApp/RESVITCLIPv1
+cd Fake-News-Multimodal-Classification/Fakeddit-WebApp/CLIPv2
 streamlit run app.py
 ```
 
-### 2. CLIP v2 only — `Fakeddit-WebApp/CLIPv2/`
+### 7.3 Running Streamlit on Colab
 
-Single-model UI using **`clip_multimodal_best.pth`** and `CLIPMultimodalClassifier` from this folder’s `Model.py`.
+Streamlit cannot open a browser tab natively from Colab. Use `pyngrok` to get a public URL:
 
-```bash
-cd Fakeddit-WebApp/CLIPv2
-streamlit run app.py
+```python
+!pip install -q streamlit pyngrok
+from pyngrok import ngrok
+import subprocess
+
+proc = subprocess.Popen([
+    "streamlit", "run",
+    "/content/Multimodal-Fake-News-Classification-on-Fakeddit/Fake-News-Multimodal-Classification/Fakeddit-WebApp/RESVITCLIPv1/app.py",
+    "--server.port", "8501"
+])
+
+public_url = ngrok.connect(8501)
+print("Open this URL in your browser:", public_url)
 ```
 
-**Weights:** Pretrained `.pth` files are often **large** and may be excluded from Git; copy your trained checkpoints into the folders above or use [Git LFS](https://git-lfs.com/) if you publish them.
+---
 
-First run will download Hugging Face models (**BERT**, **ViT**, **CLIP**) unless already cached.
+## 8. Pre-Trained Weights
+
+To run the demo **without training from scratch**, download our pre-trained checkpoints and place them in the app folder:
+
+| Checkpoint | Model | Download |
+|---|---|---|
+| `m1.pth` | BERT + ResNet-50 | *(https://drive.google.com/drive/folders/1cHm_FllwuDGQLDTGxbLGGmJ9ty1QeKAi?usp=sharing)* |
+| `bert_vit_v2_2_best_score.pth` | BERT + ViT | *(https://drive.google.com/drive/folders/1cHm_FllwuDGQLDTGxbLGGmJ9ty1QeKAi?usp=sharing)* |
+| `clip_multimodal_bestv1.pth` | CLIP Classifier v1| *(https://drive.google.com/drive/folders/1cHm_FllwuDGQLDTGxbLGGmJ9ty1QeKAi?usp=sharing)* |
+
+> **During the lab session:** we will share the checkpoint files directly. Place them next to `app.py` and the app will load them automatically.
 
 ---
 
-## Reproducibility notes
+## 9. Installation Challenge — Quick Checklist
 
-- Notebooks assume **GPU** (Colab or local CUDA) for reasonable runtime; ViT and CLIP are the most memory-hungry.
-- **Splits:** `bert_ViT_v2.ipynb` and `CLIPv2_1.ipynb` use stratified `train_test_split` (e.g. 80% train, then half of the remainder for val/test); align with the notebook you treat as canonical if you compare numbers across experiments.
-- **Class imbalance:** BERT+ResNet uses weighted loss; CLIP v2 adds sampling, augmentation, and label smoothing—compare confusions and per-class F1 in the notebooks, not only accuracy.
+For another group completing the **30-minute lab installation**:
+
+```
+[1]. Create Google Drive folder tree (Section 4.1)
+       My Drive/fake-news-detector/multimodal_only_samples/working/images/
+
+[2]. Upload the 3 TSV files into multimodal_only_samples/ (Section 4.2)
+       multimodal_train.tsv, multimodal_test_public.tsv, multimodal_validate.tsv
+
+[3]. Open a new Colab notebook and clone the repo (Section 5.1):
+       !git clone https://github.com/ak-saxena/Multimodal-Fake-News-Classification-on-Fakeddit.git
+
+[4]. Install dependencies (Section 5.2)
+
+[5]. Mount Drive and run dataset_downloader.ipynb (Section 5.3)
+       -> For the lab, you only need clean_df.csv + a partial image set to
+          verify training notebooks can start. Full download takes 1-3 hours
+          and can run in the background.
+
+[6]. Get pre-trained checkpoints from the authors (Section 8)
+       Place them next to the corresponding app.py
+
+[7]. Run the demo app (Section 7.1):
+       streamlit run app.py
+       (or use pyngrok if running on Colab — Section 7.3)
+
+[8]. Test: enter any headline + upload an image
+       -> verify predictions and majority vote appear correctly
+```
+
+If anything breaks, contact us — we can fix paths or update code on the fly during the session.
 
 ---
 
-## License and attribution
+## 10. Best Performance
 
-Use of the **Fakeddit** dataset is subject to its original license and terms. Cite the Fakeddit paper when using this benchmark. Model checkpoints and code here are for research and education unless you add your own license file.
+Results on the Fakeddit test set (CLIP classifier V2, from `CLIPv2_1.ipynb`):
+
+| Metric | Value |
+|---|---|
+| Test Loss | 1.2882 |
+| Test Accuracy | **83.22%** |
+| Weighted Precision | 83.04% |
+| Weighted Recall | 83.22% |
+| Weighted F1 | 83.00% |
+| Macro F1 | 73.86% |
+
+Per-class breakdown (test set, n = 1847):
+
+| Label | Precision | Recall | F1-Score | Support |
+|---|---|---|---|---|
+| TRUE (0) | 0.8527 | 0.9119 | 0.8813 | 1022 |
+| SATIRE (1) | 0.7943 | 0.7089 | 0.7492 | 158 |
+| FALSE CONNECTION (2) | 0.8319 | 0.7673 | 0.7983 | 490 |
+| IMPOSTER CONTENT (3) | 0.4528 | 0.4211 | 0.4364 | 57 |
+| MANIPULATED CONTENT (4) | 0.8333 | 0.6667 | 0.7407 | 15 |
+| MISLEADING CONTENT (5) | 0.8646 | 0.7905 | 0.8259 | 105 |
 
 ---
 
-## Acknowledgments
+## 11. Configuration Reference
 
-- **Fakeddit** authors for the multimodal benchmark.
-- **Hugging Face** `transformers` for BERT, ViT, and CLIP implementations.
-- Earlier README iterations referenced a single-streamlit layout; this document reflects the **current** multi-notebook and **dual Streamlit** structure.
+All hard-coded paths and hyperparameters are defined near the **top of each notebook or `app.py`**. Update them if your folder structure differs.
+
+| File | Variable | Default Value |
+|---|---|---|
+| All training notebooks | `CLEANDFPATH` | `/content/drive/MyDrive/fake-news-detector/multimodal_only_samples/working/clean_df.csv` |
+| All training notebooks | `IMAGEDIR` | `/content/drive/MyDrive/fake-news-detector/multimodal_only_samples/working/images` |
+| `bert_ViT_v2.ipynb` | `SAVE_DIR` | `.../multimodal_only_samples/bert_vit_v2_2` |
+| `RESVITCLIPv1/app.py` | checkpoint names | `m1.pth`, `bert_vit_v2_2_best_score.pth`, `clip_multimodal_bestv1.pth` |
+| `CLIPv2/app.py` | `MODEL_PATH` | `clip_multimodal_best.pth` |
+
+---
+
+## 12. License
+
+This project is released under the **[GNU AGPL v3.0](LICENSE)** license.
+
+---
+
+## 13. Authors
+
+| Name | Email |
+|---|---|
+| Akshit Saxena | saxenaak@tcd.ie |
+| Naysha Kumari | nkumari@tcd.ie |
+
