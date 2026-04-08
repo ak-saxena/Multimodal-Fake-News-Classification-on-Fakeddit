@@ -2,7 +2,6 @@
 
 > **Classify Reddit posts (headline + image) into 6 fake-news categories using BERT+ResNet-50, BERT+ViT, and CLIP.**
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/)
 
