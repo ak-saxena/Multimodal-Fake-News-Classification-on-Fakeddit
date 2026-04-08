@@ -14,7 +14,7 @@ A Streamlit demo app lets you load trained weights and classify new (headline, i
 
 # For Training and Implementation please Refer to README inside the folder
 
-[📄 Training and Implementation Documents](https://github.com/ak-saxena/Multimodal-Fake-News-Classification-on-Fakeddit/blob/main/Fake-News-Multimodal-Classification/README.md)
+📄[Training and Implementation Documents](https://github.com/ak-saxena/Multimodal-Fake-News-Classification-on-Fakeddit/blob/main/Fake-News-Multimodal-Classification/README.md)
 
 ---
 # Project Overview
